@@ -2,9 +2,8 @@
 
 A Python client for connecting to Datadog's MCP server using Anthropic's official MCP library with **full MCP Authorization specification compliance** and **persistent token caching**.
 
-## 🎉 **Current Status: FULLY FUNCTIONAL**
 
-This implementation is **production-ready** and provides:
+This implementation provides:
 - ✅ Complete MCP-compliant OAuth 2.1 flow
 - ✅ Automatic token caching and refresh 
 - ✅ Access to all 15 Datadog MCP tools
@@ -203,7 +202,7 @@ To create a Datadog OAuth app for fallback credentials:
 
 ## 🎯 Next Steps
 
-The client is production-ready! You can:
+You can:
 - Integrate it into your applications
 - Build custom tools using the Datadog MCP tools
 - Extend functionality for your specific use cases
