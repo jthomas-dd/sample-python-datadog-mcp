@@ -1,0 +1,71 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Sensitive files - OAuth tokens and credentials
+oauth_tokens.json
+.datadog-mcp/
+*.cache
+*.log
+
+# Environment variables with secrets
+.env.local
+.env.production
+.env.development
+
+# Any files containing tokens or keys
+*token*
+*key*
+*secret*
+*credential*
+
+# Backup files that might contain sensitive data
+*.bak
+*.backup
+*.tmp
