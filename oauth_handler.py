@@ -7,6 +7,7 @@ import urllib.parse
 import json
 import uuid
 from typing import Optional, Dict, Any, List
+from pathlib import Path
 import webbrowser
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
@@ -91,6 +92,11 @@ class MCPDatadogOAuthHandler:
         self.access_token: Optional[str] = None
         self.refresh_token: Optional[str] = None
         self.token_expires_at: Optional[float] = None
+        
+        # Token cache file
+        self.cache_dir = Path.home() / ".datadog-mcp"
+        self.token_cache_file = self.cache_dir / "oauth_tokens.json"
+        self._ensure_cache_dir()
     
     def _generate_code_verifier(self) -> str:
         """Generate PKCE code verifier."""
@@ -100,6 +106,84 @@ class MCPDatadogOAuthHandler:
         """Generate PKCE code challenge from verifier."""
         digest = hashlib.sha256(verifier.encode('utf-8')).digest()
         return base64.urlsafe_b64encode(digest).decode('utf-8').rstrip('=')
+    
+    def _ensure_cache_dir(self) -> None:
+        """Ensure the cache directory exists."""
+        self.cache_dir.mkdir(mode=0o700, exist_ok=True)
+    
+    def _save_tokens_to_cache(self) -> None:
+        """Save tokens to cache file."""
+        try:
+            cache_data = {
+                "access_token": self.access_token,
+                "refresh_token": self.refresh_token,
+                "token_expires_at": self.token_expires_at,
+                "resource_uri": self.resource_uri,
+                "client_id": self.client_id,
+                "client_secret": self.client_secret,
+                "auth_server_metadata": self.auth_server_metadata,
+                "selected_auth_server": self.selected_auth_server,
+                "cached_at": time.time()
+            }
+            
+            with open(self.token_cache_file, 'w') as f:
+                json.dump(cache_data, f, indent=2)
+            
+            # Set restrictive permissions on the cache file
+            self.token_cache_file.chmod(0o600)
+            print(f"🗄️  Tokens cached to {self.token_cache_file}")
+            
+        except Exception as e:
+            print(f"⚠️  Failed to cache tokens: {e}")
+    
+    def _load_tokens_from_cache(self) -> bool:
+        """Load tokens from cache file. Returns True if valid tokens were loaded."""
+        try:
+            if not self.token_cache_file.exists():
+                print("📁 No token cache found")
+                return False
+            
+            with open(self.token_cache_file, 'r') as f:
+                cache_data = json.load(f)
+            
+            # Verify the cached tokens are for the same resource
+            if cache_data.get("resource_uri") != self.resource_uri:
+                print(f"🔄 Cache is for different resource URI, ignoring")
+                return False
+            
+            # Load token data
+            self.access_token = cache_data.get("access_token")
+            self.refresh_token = cache_data.get("refresh_token")
+            self.token_expires_at = cache_data.get("token_expires_at")
+            self.client_id = cache_data.get("client_id")
+            self.client_secret = cache_data.get("client_secret")
+            self.auth_server_metadata = cache_data.get("auth_server_metadata")
+            self.selected_auth_server = cache_data.get("selected_auth_server")
+            
+            cached_at = cache_data.get("cached_at", 0)
+            cache_age = time.time() - cached_at
+            
+            print(f"📁 Loaded tokens from cache (age: {cache_age:.1f}s)")
+            
+            # Check if we have valid data
+            if not self.access_token:
+                print("⚠️  No access token in cache")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            print(f"⚠️  Failed to load cached tokens: {e}")
+            return False
+    
+    def _clear_token_cache(self) -> None:
+        """Clear the token cache file."""
+        try:
+            if self.token_cache_file.exists():
+                self.token_cache_file.unlink()
+                print("🗑️  Token cache cleared")
+        except Exception as e:
+            print(f"⚠️  Failed to clear token cache: {e}")
     
     async def discover_authorization_servers(self) -> List[str]:
         """Discover authorization servers using RFC 9728 Protected Resource Metadata."""
@@ -435,6 +519,10 @@ class MCPDatadogOAuthHandler:
             self.token_expires_at = time.time() + expires_in
             
             print("✅ Successfully obtained access token!")
+            
+            # Save tokens to cache
+            self._save_tokens_to_cache()
+            
             return self.access_token
     
     async def refresh_access_token(self) -> str:
@@ -475,22 +563,38 @@ class MCPDatadogOAuthHandler:
             expires_in = token_data.get('expires_in', 3600)
             self.token_expires_at = time.time() + expires_in
             
+            print("🔄 Token refreshed successfully!")
+            
+            # Save updated tokens to cache
+            self._save_tokens_to_cache()
+            
             return self.access_token
     
     async def get_valid_token(self) -> str:
-        """Get a valid access token, refreshing if necessary or starting full MCP OAuth flow."""
+        """Get a valid access token, using cache, refreshing if necessary, or starting full MCP OAuth flow."""
+        # First, try to load tokens from cache if we don't have any
         if not self.access_token:
-            return await self.start_mcp_oauth_flow()
+            print("🔍 Checking for cached tokens...")
+            cache_loaded = self._load_tokens_from_cache()
+            if not cache_loaded:
+                print("🚀 No valid cached tokens, starting OAuth flow...")
+                return await self.start_mcp_oauth_flow()
         
         # Check if token is expired (with 5 minute buffer)
         if self.token_expires_at and time.time() > (self.token_expires_at - 300):
+            print("⏰ Access token is expired, attempting refresh...")
             if self.refresh_token:
                 try:
                     return await self.refresh_access_token()
                 except Exception as e:
-                    print(f"Token refresh failed: {e}, starting new OAuth flow")
+                    print(f"🔄 Token refresh failed: {e}")
+                    print("🗑️  Clearing invalid cache and starting new OAuth flow...")
+                    self._clear_token_cache()
                     return await self.start_mcp_oauth_flow()
             else:
+                print("🚀 No refresh token available, starting new OAuth flow...")
+                self._clear_token_cache()
                 return await self.start_mcp_oauth_flow()
         
+        print(f"✅ Using valid cached access token (expires in {(self.token_expires_at - time.time()) / 60:.1f} minutes)")
         return self.access_token
